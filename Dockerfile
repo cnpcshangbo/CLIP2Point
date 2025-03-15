@@ -1,125 +1,137 @@
 # FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu20.04
-FROM pytorch/pytorch:1.11.0-cuda11.3-cudnn8-devel
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-devel
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
-# ENV PYTHONUNBUFFERED=1
-# ENV CUDA_HOME=/usr/local/cuda
-# ENV PATH=${CUDA_HOME}/bin:${PATH}
-# ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
-# Set CUDA architecture flags
-# ENV TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6+PTX"
-# ENV FORCE_CUDA=1
-# Set C++ ABI and compiler flags
-# ENV _GLIBCXX_USE_CXX11_ABI=1
-# ENV TORCH_CXX11_ABI=1
-# ENV CXXFLAGS="-std=c++17"
-# ENV NVCC_FLAGS="-std=c++17"
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV TORCH_CUDA_ARCH_LIST="8.6"
+ENV CC=gcc-11
+ENV CXX=g++-11
+ENV TORCH_CXX_FLAGS="-std=c++17"
+ENV NVCC_FLAGS="-std=c++17"
+ENV CXXFLAGS="-std=c++17"
+ENV CFLAGS="-std=c++17"
 
-# Install system dependencies
-# RUN apt-get update && apt-get install -y \
-#     software-properties-common \
-#     curl \
-#     tmux \
-#     libblas-dev \
-#     liblapack-dev \
-#     libgl1-mesa-glx \
-#     libglib2.0-0 \
-#     ninja-build \
-#     cmake \
-#     python3-pip \
-#     python3-dev \
-#     git \
-#     wget \
-#     build-essential \
-#     libpthread-stubs0-dev \
-#     && rm -rf /var/lib/apt/lists/*
+# Install system dependencies and gcc-11
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository -y ppa:ubuntu-toolchain-r/test && \
+    apt-get update && \
+    apt-get install -y \
+    curl \
+    tmux \
+    libblas-dev \
+    liblapack-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    ninja-build \
+    cmake \
+    python3-pip \
+    python3-dev \
+    git \
+    wget \
+    build-essential \
+    libpthread-stubs0-dev \
+    gcc-11 \
+    g++-11 \
+    nvidia-cuda-toolkit \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create symbolic links for Python
-# RUN ln -sf /usr/bin/python3 /usr/bin/python && \
-#     ln -sf /usr/bin/pip3 /usr/bin/pip
+# Set gcc-11 and g++-11 as the default compilers
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100 \
+    && update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-11 100 \
+    && update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-11 100 \
+    && update-alternatives --set gcc /usr/bin/gcc-11 \
+    && update-alternatives --set g++ /usr/bin/g++-11 \
+    && update-alternatives --set cc /usr/bin/gcc-11 \
+    && update-alternatives --set c++ /usr/bin/g++-11
 
-# Install pip
-# RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
-#     python get-pip.py && \
-#     rm get-pip.py
+# Verify all compiler versions point to gcc-11
+RUN echo "Verifying compiler versions:" && \
+    gcc --version && \
+    g++ --version && \
+    cc --version && \
+    c++ --version && \
+    echo "#include <iostream>\nint main() { if constexpr(true) { return 0; } return 1; }" > test.cpp && \
+    g++ -std=c++17 test.cpp -o test && \
+    rm test.cpp test
 
-# Install CUB
-# RUN wget https://github.com/NVIDIA/cub/archive/refs/tags/1.17.2.tar.gz && \
-#     tar xzf 1.17.2.tar.gz && \
-#     mv cub-1.17.2 /usr/local/cub && \
-#     rm 1.17.2.tar.gz
-# ENV CUB_HOME=/usr/local/cub
-
-# Install Mambaforge
-# RUN wget "https://github.com/conda-forge/miniforge/releases/download/23.11.0-0/Mambaforge-23.11.0-0-Linux-x86_64.sh" -O mambaforge.sh && \
-#     bash mambaforge.sh -b -p /opt/conda && \
-#     rm mambaforge.sh
-# ENV PATH=/opt/conda/bin:$PATH
-
-# Create conda environment with Python 3.8
-# RUN conda create -n clip2point python=3.8 -y && \
-#     conda init bash && \
-#     echo "conda activate clip2point" >> ~/.bashrc
-
-# Activate environment and install packages
-# SHELL ["conda", "run", "-n", "clip2point", "/bin/bash", "-c"]
-
-# Clean any previous installations to avoid conflicts
-# RUN pip uninstall -y torch torchvision torchaudio pytorch3d
-
-# Install Intel OpenMP runtime which PyTorch needs
-# RUN apt-get update && apt-get install -y libomp5 && rm -rf /var/lib/apt/lists/*
-
-# Install PyTorch with CUDA 12.1 support using pip
-# RUN pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# Print PyTorch version
-RUN python -c "import torch; print('PyTorch version:', torch.__version__); print('PyTorch CUDA version:', torch.version.cuda)"
-
-# Install CUB using apt instead of conda
-# RUN apt-get update && \
-#     apt-get install -y nvidia-cuda-dev && \
-#     rm -rf /var/lib/apt/lists/*
+# Verify CUDA installation and accessibility
+# Note: GPU availability checks (nvidia-smi) should be performed at runtime
+# using: docker run --gpus all ...
+RUN echo "CUDA_HOME: $CUDA_HOME" && \
+    echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH" && \
+    echo "NVIDIA_VISIBLE_DEVICES: $NVIDIA_VISIBLE_DEVICES" && \
+    echo "NVIDIA_DRIVER_CAPABILITIES: $NVIDIA_DRIVER_CAPABILITIES" && \
+    echo "CC: $CC" && \
+    echo "CXX: $CXX" && \
+    echo "TORCH_CXX_FLAGS: $TORCH_CXX_FLAGS" && \
+    ls -l $CUDA_HOME && \
+    nvcc --version && \
+    python -c "import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available()); print('CUDA version:', torch.version.cuda); print('Current device:', torch.cuda.current_device() if torch.cuda.is_available() else 'None'); print('Device count:', torch.cuda.device_count() if torch.cuda.is_available() else 0); print('Device name:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
 
 # Install PyTorch3D dependencies
-# RUN pip install 'fvcore>=0.1.5' && \
-#     pip install 'iopath>=0.1.7' && \
-#     pip install 'scikit-image>=0.17.2' && \
-#     pip install 'plotly>=4.14.3' && \
-#     pip install 'black==21.4b2' && \
-#     pip install 'pytorch-lightning>=1.2.0' && \
-#     pip install 'tensorboard>=2.4.1' && \
-#     pip install 'jupyter>=1.0.0' && \
-#     pip install 'matplotlib>=3.3.3' && \
-#     pip install 'imageio>=2.9.0' && \
-#     pip install 'imageio-ffmpeg>=0.4.3'
-
-# Install PyTorch3D from source with latest compatible version
-# RUN git clone https://github.com/facebookresearch/pytorch3d.git && \
-#     cd pytorch3d && \
-#     git checkout v0.7.5 && \
-#     FORCE_CUDA=1 PYTORCH3D_NO_NINJA=1 MAX_JOBS=4 pip install -e .
-
 RUN conda install -c fvcore -c iopath -c conda-forge fvcore iopath
-RUN conda install pytorch3d=0.7.0 -c pytorch3d
+# Update conda
+RUN conda update -n base -c defaults conda -y
+
+# Install and configure CUB
+WORKDIR /tmp
+RUN rm -rf /tmp/cub && \
+    git clone https://github.com/NVIDIA/cub.git /tmp/cub && \
+    export CUB_HOME=/tmp/cub
+
+# # Build PyTorch3D from source with C++17 flags
+RUN git clone https://github.com/facebookresearch/pytorch3d.git
+RUN cd pytorch3d && git checkout v0.7.7 && \
+    FORCE_CUDA=1 \
+    PYTORCH3D_NO_NINJA=1 \
+    MAX_JOBS=4 \
+    CUB_HOME=/tmp/cub \
+    TORCH_CUDA_ARCH_LIST="8.6" \
+    TORCH_CXX_FLAGS="-std=c++17" \
+    NVCC_FLAGS="-std=c++17" \
+    CXXFLAGS="-std=c++17" \
+    CFLAGS="-std=c++17" \
+    CC=gcc-11 \
+    CXX=g++-11 \
+    pip install -e .
 
 # Test if PyTorch3D import works
 RUN python -c "from pytorch3d.structures import Meshes; print('PyTorch3D import successful!')"
 
 # Install CLIP
 RUN pip install ftfy regex tqdm
-RUN apt-get update --allow-insecure-repositories
-RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub 
-RUN apt-get update
-RUN apt-get install -y git build-essential
+RUN apt-get update --allow-insecure-repositories && \
+    apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub && \
+    apt-get update && \
+    rm -rf /var/lib/apt/lists/*
 RUN pip install git+https://github.com/openai/CLIP.git
 
 # Install pointnet2_ops and other requirements
 WORKDIR /tmp/pointnet2
-RUN git clone https://github.com/erikwijmans/Pointnet2_PyTorch.git .
+
+RUN git clone https://github.com/erikwijmans/Pointnet2_PyTorch.git . && \
+    # cd Pointnet2_PyTorch && \
+    git fetch origin pull/186/head:pr-186 && \
+    git checkout pr-186
+
+
+# RUN git clone https://github.com/erikwijmans/Pointnet2_PyTorch.git .
 ENV CUDA_HOME=/usr/local/cuda
 RUN cd pointnet2_ops_lib && \
+    TORCH_CUDA_ARCH_LIST="8.6" \
+    TORCH_CXX_FLAGS="-std=c++17" \
+    NVCC_FLAGS="-std=c++17" \
+    CXXFLAGS="-std=c++17" \
+    CFLAGS="-std=c++17" \
+    CC=gcc-11 \
+    CXX=g++-11 \
     python setup.py build_ext --inplace && \
     python setup.py install
 WORKDIR /app
