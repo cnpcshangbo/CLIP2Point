@@ -4,3 +4,4 @@ __pycache__
 data/
 exp_results/
 pre_results/
+rendered_views_ModelNet40/

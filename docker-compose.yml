@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  clip2point:
+    build: .
+    container_name: clip2point
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - .:/app
+      - ./datasets:/app/datasets
+      - ./data:/app/data
+    tty: true
+    stdin_open: true
+    command: /bin/bash 

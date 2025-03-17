@@ -28,9 +28,18 @@ class ScanObjectNN(Dataset):
         return point, label
 
     def _load_ScanObjectNN(self, partition):
-        BASE_DIR = '/data1/hty/h5_files/'
+        # Try to get path from environment variable first
+        BASE_DIR = os.getenv('SCANOBJECTNN_PATH', './data/ScanObjectNN')
         DATA_DIR = os.path.join(BASE_DIR, 'main_split')
+        # Ensure directory exists
+        os.makedirs(DATA_DIR, exist_ok=True)
         h5_name = os.path.join(DATA_DIR, f'{partition}_objectdataset.h5')
+        if not os.path.exists(h5_name):
+            raise FileNotFoundError(
+                f"ScanObjectNN dataset file not found at {h5_name}. "
+                "Please download the dataset from https://github.com/hkust-vgd/scanobjectnn "
+                "and place it in the correct location, or set the SCANOBJECTNN_PATH environment variable."
+            )
         f = h5py.File(h5_name)
         self.points = torch.from_numpy(f['data'][:].astype('float32')) 
         self.labels = torch.from_numpy(f['label'][:].astype('int64')) 
