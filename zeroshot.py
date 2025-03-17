@@ -1,10 +1,12 @@
-from copy import deepcopy
 import torch
 import argparse
 from torch.utils.data import DataLoader
 import clip
 from tqdm import tqdm
 from pointnet2_ops import pointnet2_utils
+import os
+import torchvision.utils as vutils
+from copy import deepcopy
 
 from datasets import ModelNet10, ModelNet40Align, ModelNet40Ply, ScanObjectNN
 from render.selector import Selector
@@ -17,17 +19,20 @@ clip_model, _ = clip.load('ViT-B/32', device='cpu')
 def inference(args):    
     if args.dataset == 'ModelNet10':
         dataset = ModelNet10()
-        prompts = ['bathtub', 'bed', 'chair', 'desk', 'dresser', 'monitor', 'night_stand', 'sofa', 'table', 'toilet']
+        class_names = ['bathtub', 'bed', 'chair', 'desk', 'dresser', 'monitor', 'night_stand', 'sofa', 'table', 'toilet']
     elif args.dataset == 'ModelNet40':
         dataset = ModelNet40Ply()
-        prompts = ['airplane', 'bathtub', 'bed', 'bench', 'bookshelf', 'bottle', 'bowl', 'car', 'chair', 'cone', 'cup', 'curtain', 'desk', 'door', 'dresser', 'flower pot', 'glass box', 'guitar', 'keyboard', 'lamp', 'laptop', 'mantel', 'monitor', 'night stand', 'person', 'piano', 'plant', 'radio', 'range hood', 'sink', 'sofa', 'stairs', 'stool', 'table', 'tent', 'toilet', 'tv stand', 'vase', 'wardrobe', 'xbox']
+        class_names = ['airplane', 'bathtub', 'bed', 'bench', 'bookshelf', 'bottle', 'bowl', 'car', 'chair', 'cone', 'cup', 'curtain', 'desk', 'door', 'dresser', 'flower pot', 'glass box', 'guitar', 'keyboard', 'lamp', 'laptop', 'mantel', 'monitor', 'night stand', 'person', 'piano', 'plant', 'radio', 'range hood', 'sink', 'sofa', 'stairs', 'stool', 'table', 'tent', 'toilet', 'tv stand', 'vase', 'wardrobe', 'xbox']
     else:
         dataset = ScanObjectNN()
-        prompts = ['bag', 'bin', 'box', 'cabinet', 'chair', 'desk', 'display', 'door', 'shelf', 'table', 'bed', 'pillow', 'sink', 'sofa', 'toilet']
+        class_names = ['bag', 'bin', 'box', 'cabinet', 'chair', 'desk', 'display', 'door', 'shelf', 'table', 'bed', 'pillow', 'sink', 'sofa', 'toilet']
         
+    # Create directory for saving rendered views
+    save_dir = f'rendered_views_{args.dataset}'
+    os.makedirs(save_dir, exist_ok=True)
 
     dataloader = DataLoader(dataset, batch_size=args.test_batch_size, num_workers=4, shuffle=True)
-    prompts = ['image of a ' + prompts[i] for i in range(len(prompts))]
+    prompts = ['image of a ' + class_names[i] for i in range(len(class_names))]
     prompts = clip.tokenize(prompts)
     prompts = clip_model.encode_text(prompts)
     prompts_feats = prompts / prompts.norm(dim=-1, keepdim=True)
@@ -45,7 +50,7 @@ def inference(args):
     with torch.no_grad():
         correct_num = 0
         total = 0
-        for (points, label) in tqdm(dataloader):
+        for batch_idx, (points, label) in enumerate(tqdm(dataloader)):
             points = points.to(device)
             if args.dataset == 'ScanObjectNN':
                 fps_idx = pointnet2_utils.furthest_point_sample(points, 1024)
@@ -55,6 +60,23 @@ def inference(args):
                 images = render(points, c_views_azim, c_views_elev, c_views_dist, args.views, rot=False)
             else:
                 images = render(points, c_views_azim, c_views_elev, c_views_dist, args.views, rot=True)
+            
+            # Save rendered views
+            b, n, c, h, w = images.shape
+            for i in range(b):
+                # Get true class name
+                true_class = class_names[label[i].item()]
+                # Create directory for this class if it doesn't exist
+                class_dir = os.path.join(save_dir, true_class)
+                os.makedirs(class_dir, exist_ok=True)
+                # Save each view for this point cloud
+                for v in range(n):
+                    img = images[i, v]  # (3, H, W)
+                    # Normalize to [0, 1] range for saving
+                    img = (img - img.min()) / (img.max() - img.min())
+                    save_path = os.path.join(class_dir, f'batch{batch_idx}_sample{i}_view{v}.png')
+                    vutils.save_image(img, save_path)
+            
             b, n, c, h, w = images.shape
             images = images.reshape(-1, c, h, w)
             image_feats = model(images)
